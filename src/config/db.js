@@ -1,22 +1,20 @@
 const sql = require("mssql");
+require('dotenv').config();
 
-// Config for your local SQL Server
 const config = {
-    user: "sa",      // e.g., 'sa'
-    password: "123",  // e.g., '12345'
-    server: "localhost",           // or IP address
-    database: "GarbageCollectionDB",      // e.g., 'FYP_DB'
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD, 
+    server: process.env.DB_SERVER,
+    database: process.env.DB_NAME,
     options: {
-        encrypt: false,           // use true if using Azure
-        trustServerCertificate: true // important for local dev
+        encrypt: process.env.DB_ENCRYPT === 'true',
+        trustServerCertificate: process.env.DB_TRUSTED_CONNECTION === 'true'
     }
 };
 
-// Test connection
-sql.connect(config).then(() => {
-    console.log("Connected to SQL Server!");
-}).catch(err => {
-    console.log("Database Connection Failed!", err);
-});
+// Connect to DB
+sql.connect(config)
+    .then(() => console.log("✅ Connected to SQL Server"))
+    .catch(err => console.error("❌ Database Connection Failed:", err));
 
 module.exports = sql;

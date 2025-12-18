@@ -1,199 +1,286 @@
-const express = require('express');
-const router = express.Router();
-const sql = require('../config/db');
+const sql = require('../config/db.js');
 
-//buy subscription
-function getSubscriptionDetails(type) {
-    switch (type) {
-        case "Monthly":
-            return { months: 1, amount: 3000 };
-        case "Quarterly":
-            return { months: 3, amount: 8000 };
-        case "Yearly":
-            return { months: 12, amount: 30000 };
-        default:
-            return null;
-    }
-}
-exports.buySubscription = async (req, res) => {
+//add a new plan
+exports.addPlan = async (req, res) => {
     try {
-        const { UserID, CompanyID, type } = req.body;
-        if (!UserID || !CompanyID || !type) {
-            return res.status(400).json({ message: "All fields are required" });
-        }
-        const subscriptionDetails = getSubscriptionDetails(type);
-
+        const {
+            CompanyID,
+            Name,
+            BagsperDay,
+            MonthlyPrice,
+            Description,
+            isActive
+        } = req.body;
         const request = new sql.Request();
-        const existing = await request
-            .input("UserID", UserID)
-            .input("CompanyID", CompanyID)
-            .query(`
-        SELECT 1 FROM Subscriptions
-        WHERE UserID = @UserID
-        AND CompanyID = @CompanyID
-        AND Status = 'Active'
-        AND EndDate >= GETDATE()
-      `);
-
-        if (existing.recordset.length > 0) {
-            return res.status(409).json({
-                message: "Active subscription already exists"
-            });
-        }
-        if (!subscriptionDetails) {
-            return res.status(400).json({ message: "Invalid subscription type" });
-        }
-        request.input('UserID', UserID);
         request.input('CompanyID', CompanyID);
-        request.input('Type', type);
-        request.input('Amount', subscriptionDetails.amount);
-        request.input('StartDate', new Date());
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + subscriptionDetails.months);
-        request.input('EndDate', endDate);
-        await request.query(`INSERT INTO Subscriptions (UserID, CompanyID,  StartDate, EndDate,type, amount)
-    VALUES (@UserID, @CompanyID, @StartDate, @EndDate ,@Type, @Amount)`);
-        res.status(201).json({ message: "Subscription purchased successfully" });
-    } catch (err) {
-        res.status(500).json({ message: "Server Error", error: err.message });
-    }
-};
-//renew subscription
-exports.renewSubscription = async (req, res) => {
-    try {
-        const { SubscriptionID } = req.body;
-        if (!SubscriptionID) {
-            return res.status(400).json({ message: "SubscriptionID is required" });
-        }
-        const request = new sql.Request();
-        const result = await request.input('SubscriptionID', SubscriptionID).query(`SELECT * FROM Subscriptions WHERE SubscriptionID=@SubscriptionID`);
-        if (result.recordset.length === 0) {
-            return res.status(404).json({ message: "Subscription not found" });
-        }
-        const subscription = result.recordset[0];
-        const subscriptionDetails = getSubscriptionDetails(subscription.type);
-        if (!subscriptionDetails) {
-            return res.status(400).json({ message: "Invalid subscription type" });
-        }
-        const newEndDate = new Date(subscription.EndDate);
-        newEndDate.setMonth(newEndDate.getMonth() + subscriptionDetails.months);
-        await request
-            .input('NewEndDate', newEndDate)
-            .input('amount', subscriptionDetails.amount)
-            .query(`UPDATE Subscriptions SET EndDate=@NewEndDate,status='Active' ,amount=amount + @Amount WHERE SubscriptionID=@SubscriptionID`);
-        res.status(200).json({ message: "Subscription renewed successfully" });
+        request.input('Name', Name);
+        request.input('BagsperDay', BagsperDay);
+        request.input('MonthlyPrice', MonthlyPrice);
+        request.input('Description', Description);
+        request.input('isActive', isActive);
+        await request.query(`INSERT INTO SubscriptionPlans (CompanyID,Name,BagsperDay,MonthlyPrice,Description,isActive)
+                              VALUES (@CompanyID,@Name,@BagsperDay,@MonthlyPrice,@Description,@isActive)`);
+        return res.status(200).json({ message: "Plan added successfully" });
     } catch (err) {
         return res.status(500).json({ message: "Server Error", error: err.message });
     }
 };
-//cancel Subscription
-exports.cancelSubscription = async (req, res) => {
+//view all Plans
+exports.viewPlans = async (req, res) => {
     try {
-        const { SubscriptionID } = req.body;
+        const request = new sql.Request();
+        const { CompanyID } = req.body();
+        request.input('CompanyID', CompanyID);
+        const response = await request.query("Select * from SubscriptionPlans where CompanyId=@CompanyID");
+        return res.status(200).json({ response });
+    } catch (err) {
+        return res.status(500).json({ message: "Server Error", error: err.message });
+    }
+};
+//Buy Subscription
+exports.buySubscription = async (req, res) => {
+    try {
+        const { UserID, CompanyID, PlanID } = req.body;
 
-        if (!SubscriptionID) {
+        
+        if (!UserID || !CompanyID || !PlanID) {
             return res.status(400).json({
-                message: "SubscriptionID is required"
+                message: "UserID, CompanyID and PlanID are required"
             });
         }
 
-        const checkRequest = new sql.Request();
-        const result = await checkRequest
-            .input("SubscriptionID", SubscriptionID)
+        const StartDate = new Date();
+        const EndDate = new Date();
+        EndDate.setMonth(EndDate.getMonth() + 1);
+
+        const request = new sql.Request();
+
+      
+        const check = await request
+            .input('UserID', UserID)
+            .input('CompanyID', CompanyID)
             .query(`
-        SELECT Status 
-        FROM Subscriptions 
-        WHERE SubscriptionID = @SubscriptionID
-      `);
+                SELECT * FROM Subscriptions 
+                WHERE UserID=@UserID 
+                AND CompanyID=@CompanyID 
+                AND Status='Active'
+            `);
 
-        if (result.recordset.length === 0) {
-            return res.status(404).json({
-                message: "Subscription not found"
+        if (check.recordset.length > 0) {
+            return res.status(409).json({
+                message: "Active subscription already exists"
             });
         }
 
-        if (result.recordset[0].Status === "Expired") {
-            return res.status(400).json({
-                message: "Subscription already cancelled"
-            });
-        }
-
-
-        const updateRequest = new sql.Request();
-        await updateRequest
-            .input("SubscriptionID", SubscriptionID)
+      
+        await request
+            .input('PlanID', PlanID)
+            .input('StartDate', StartDate)
+            .input('EndDate', EndDate)
             .query(`
-        UPDATE Subscriptions
-        SET Status = 'Expired'
-        WHERE SubscriptionID = @SubscriptionID
-      `);
+                INSERT INTO Subscriptions
+                (UserID, CompanyID, PlanID, StartDate, EndDate, Status)
+                VALUES
+                (@UserID, @CompanyID, @PlanID, @StartDate, @EndDate, 'Active')
+            `);
 
-        res.status(200).json({
-            message: "Subscription cancelled successfully"
+        return res.status(201).json({
+            message: "Subscription purchased successfully"
         });
 
     } catch (err) {
-        console.error(err);
         return res.status(500).json({
             message: "Server Error",
             error: err.message
         });
     }
 };
-// Upgrade or downgrade subscription plan
+// Update Subscription (change plan)
 exports.updateSubscription = async (req, res) => {
     try {
-        const { UserID, SubscriptionID, type } = req.body;
-        if (!UserID || !SubscriptionID || !TargetType) {
-            return res.status(400).json({ message: 'UserID, SubscriptionID, and type are required' });
+        const { SubscriptionID, PlanID, CompanyID } = req.body;
+        const UserID = req.user.UserID; // JWT se
+
+        if (!SubscriptionID || !PlanID || !CompanyID) {
+            return res.status(400).json({
+                message: 'SubscriptionID, PlanID and CompanyID are required'
+            });
         }
 
         const request = new sql.Request();
-        const result = await request
+
+        const check = await request
             .input('SubscriptionID', SubscriptionID)
             .input('UserID', UserID)
-            .query(`SELECT * FROM Subscriptions WHERE SubscriptionID=@SubscriptionID AND UserID=@UserID`);
+            .input('CompanyID', CompanyID)
+            .query(`
+                SELECT *
+                FROM Subscriptions
+                WHERE SubscriptionID = @SubscriptionID
+                AND UserID = @UserID
+                AND CompanyID = @CompanyID
+                AND Status = 'Active'
+            `);
 
-        if (result.recordset.length === 0) {
-            return res.status(404).json({ message: 'Subscription not found' });
+        if (check.recordset.length === 0) {
+            return res.status(404).json({
+                message: 'Active subscription not found'
+            });
         }
-
-        const subscription = result.recordset[0];
-        const subscriptionDetails = getSubscriptionDetails(type);
-
-        if (!subscriptionDetails) {
-            return res.status(400).json({ message: 'Invalid subscription type' });
-        }
-
-        const newEndDate = new Date(subscription.EndDate);
-        newEndDate.setMonth(newEndDate.getMonth() + subscriptionDetails.months);
 
         await request
-            .input('NewEndDate', newEndDate)
-            .input('type', type)
-            .input('AdditionalAmount', subscriptionDetails.amount)
-            .query(`UPDATE Subscriptions SET EndDate=@NewEndDate, type=@type, amount=amount + @AdditionalAmount WHERE SubscriptionID=@SubscriptionID`);
+            .input('PlanID', PlanID)
+            .query(`
+                UPDATE Subscriptions
+                SET PlanID = @PlanID
+                WHERE SubscriptionID = @SubscriptionID
+            `);
 
-        return res.status(200).json({ message: 'Subscription updated successfully' });
+        return res.status(200).json({
+            message: 'Subscription updated successfully'
+        });
+
     } catch (err) {
-        return res.status(500).json({ message: 'Server Error', error: err.message });
+        console.error(err);
+        res.status(500).json({
+            message: 'Server error',
+            error: err.message
+        });
     }
 };
-//get subscription details
-exports.getSubscriptionDetails=async(req,res)=>{
-    try{
-        const {UserID,CompanyID}=req.body;
-        if(!UserID || !CompanyID){
-            return res.status(400).json({message:'UserID and CompanyID are required'});
+
+// Cancel Subscription
+exports.cancelSubscription = async (req, res) => {
+    try {
+        const { SubscriptionID, CompanyID } = req.body;
+        const UserID = req.user.UserID;
+
+        if (!SubscriptionID || !CompanyID) {
+            return res.status(400).json({
+                message: 'SubscriptionID and CompanyID are required'
+            });
         }
-        const request=new sql.Request();
-        const result=await request
-        .input('UserID',UserID)
-        .input('CompanyID',CompanyID)
-        .query(`SELECT * FROM Subscriptions WHERE UserID=@UserID AND CompanyID=@CompanyID ORDER BY StartDate DESC`);
-        return res.status(200).json({subscriptions:result.recordset});
-    }catch(err){
-        return res.status(500).json({message:'Server Error',error:err.message});
+
+        const request = new sql.Request();
+
+        const check = await request
+            .input('SubscriptionID', SubscriptionID)
+            .input('UserID', UserID)
+            .input('CompanyID', CompanyID)
+            .query(`
+                SELECT 1
+                FROM Subscriptions
+                WHERE SubscriptionID = @SubscriptionID
+                AND UserID = @UserID
+                AND CompanyID = @CompanyID
+                AND Status = 'Active'
+            `);
+
+        if (check.recordset.length === 0) {
+            return res.status(404).json({
+                message: 'Active subscription not found'
+            });
+        }
+
+
+        await request
+            .input('EndDate', new Date()) 
+            .query(`
+                UPDATE Subscriptions
+                SET 
+                    Status = 'Cancelled',
+                    EndDate = @EndDate
+                WHERE SubscriptionID = @SubscriptionID
+            `);
+
+        return res.status(200).json({
+            message: 'Subscription cancelled successfully'
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({
+            message: 'Server error',
+            error: err.message
+        });
+    }
+};
+
+// Renew Subscription
+exports.renewSubscription = async (req, res) => {
+    try {
+        const { SubscriptionID, PlanID, CompanyID } = req.body;
+        const UserID = req.user.UserID;
+
+        if (!SubscriptionID || !PlanID || !CompanyID) {
+            return res.status(400).json({
+                message: 'SubscriptionID, PlanID and CompanyID are required'
+            });
+        }
+
+        const request = new sql.Request();
+
+        const subCheck = await request
+            .input('SubscriptionID', SubscriptionID)
+            .input('UserID', UserID)
+            .input('CompanyID', CompanyID)
+            .query(`
+                SELECT *
+                FROM Subscriptions
+                WHERE SubscriptionID = @SubscriptionID
+                AND UserID = @UserID
+                AND CompanyID = @CompanyID
+                AND Status IN ('Expired', 'Cancelled')
+            `);
+
+        if (subCheck.recordset.length === 0) {
+            return res.status(404).json({
+                message: 'Subscription is not eligible for renewal'
+            });
+        }
+
+        const planResult = await request
+            .input('PlanID', PlanID)
+            .query(`
+                SELECT DurationInDays
+                FROM SubscriptionPlans
+                WHERE PlanID = @PlanID
+                AND CompanyID = @CompanyID
+                AND IsActive = 1
+            `);
+
+        if (planResult.recordset.length === 0) {
+            return res.status(404).json({
+                message: 'Invalid plan selected'
+            });
+        }
+
+        const duration = planResult.recordset[0].DurationInDays;
+
+      
+        await request
+            .input('StartDate', new Date())
+            .input('EndDate', new Date(Date.now() + duration * 24 * 60 * 60 * 1000))
+            .query(`
+                UPDATE Subscriptions
+                SET 
+                    PlanID = @PlanID,
+                    Status = 'Active',
+                    StartDate = @StartDate,
+                    EndDate = @EndDate
+                WHERE SubscriptionID = @SubscriptionID
+            `);
+
+        return res.status(200).json({
+            message: 'Subscription renewed successfully'
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({
+            message: 'Server error',
+            error: err.message
+        });
     }
 };
 

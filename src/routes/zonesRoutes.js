@@ -1,0 +1,11 @@
+const express=require('express');
+const router=express.Router();
+const sql=require('../config/db');
+const zonesController=require('../controllers/zonesController');
+router.post('/addZone',zonesController.addZone);
+router.get('/viewZones',zonesController.viewZones);
+router.get('/viewCompanyZones',zonesController.viewCompanyZones);
+router.get('viewActiveZones',zonesController.viewActiveZones);
+router.get('viewActiveCompanyZones',zonesController.viewActiveCompanyZones);
+router.patch('/deleteZone',zonesController.removeZone);
+module.exports=router;

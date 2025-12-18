@@ -1,20 +1,70 @@
-const express = require('express');
-const sql = require('../config/db.js');
-const router = express.Router();
-
-//add new Schedule
+const sql=require('../config/db.js')
+// add schedule
 exports.addSchedule = async (req, res) => {
-    const { VehicleID, ZoneID,PickupDay,PickupTime } = req.body;
     try {
-        const request=new sql.Request()
-        .input('VehicleID', sql.Int, VehicleID)
-        .input('ZoneID', sql.Int, ZoneID)
-        .input('PickupDay', sql.VarChar(50), PickupDay)
-        .input('PickupTime', sql.VarChar(50), PickupTime);
-        await request.query(`INSERT INTO Schedules (VehicleID, ZoneID, PickupDay, PickupTime) 
-                             VALUES (@VehicleID, @ZoneID, @PickupDay, @PickupTime)`);
-        return res.status(200).json({ message: "Schedule added successfully" });
+        const {
+            CompanyID,
+            ZoneID,
+            VehicleID,
+            DriverID,
+            CollectorID,
+            DayOfWeek,
+            StartTime,
+            EndTime
+        } = req.body;
+
+        if (!CompanyID || !ZoneID || !DayOfWeek) {
+            return res.status(400).json({
+                message: 'CompanyID, ZoneID and DayOfWeek are required'
+            });
+        }
+
+        const request = new sql.Request();
+
+        await request
+            .input('CompanyID', CompanyID)
+            .input('ZoneID', ZoneID)
+            .input('VehicleID', VehicleID)
+            .input('DriverID', DriverID)
+            .input('CollectorID', CollectorID)
+            .input('DayOfWeek', DayOfWeek)
+            .input('StartTime', StartTime)
+            .input('EndTime', EndTime)
+            .query(`
+                INSERT INTO Schedules
+                (
+                    CompanyID,
+                    ZoneID,
+                    VehicleID,
+                    DriverID,
+                    CollectorID,
+                    DayOfWeek,
+                    StartTime,
+                    EndTime,
+                    Active
+                )
+                VALUES
+                (
+                    @CompanyID,
+                    @ZoneID,
+                    @VehicleID,
+                    @DriverID,
+                    @CollectorID,
+                    @DayOfWeek,
+                    @StartTime,
+                    @EndTime,
+                    1
+                )
+            `);
+
+        res.status(201).json({
+            message: 'Schedule added successfully'
+        });
+
     } catch (err) {
-        return res.status(500).json({ message: "Server Error", error: err.message });
-    };
-}
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
