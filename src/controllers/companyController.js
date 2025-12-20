@@ -11,7 +11,7 @@ exports.addCompany = async (req, res) => {
             RegistrationNumber
         } = req.body;
 
-        const UserID = req.user.UserID; // JWT se
+        const UserID = req.user.UserID; 
 
         if (!Name || !Email) {
             return res.status(400).json({
