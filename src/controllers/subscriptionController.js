@@ -29,7 +29,7 @@ exports.addPlan = async (req, res) => {
 exports.viewPlans = async (req, res) => {
     try {
         const request = new sql.Request();
-        const { CompanyID } = req.body();
+        const { CompanyID } = req.body;
         request.input('CompanyID', CompanyID);
         const response = await request.query("Select * from SubscriptionPlans where CompanyId=@CompanyID");
         return res.status(200).json({ response });
