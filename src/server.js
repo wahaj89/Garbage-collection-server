@@ -9,8 +9,10 @@ const driverRoutes=require('./routes/driverRoutes');
 const companyRoutes=require('./routes/companyRoutes.js');
 const vehicleRoutes=require('./routes/vehicleRoutes.js');
 const collectorRoutes=require('./routes/collectorRoute.js');
-const zoneRoutes=require('./routes/zonesRoutes.js')
-const scheduleRoutes=require('./routes/scheduleRoute.js')
+const zoneRoutes=require('./routes/zonesRoutes.js');
+const scheduleRoutes=require('./routes/scheduleRoute.js');
+const pickupRoutes=require('./routes/pickupRoutes.js');
+const bagRoutes=require('./routes/bagRoutes.js');
 
 app.use(express.json());
 app.use('/api',subscriptionRoutes);
@@ -21,6 +23,8 @@ app.use('/api',vehicleRoutes);
 app.use('/api',collectorRoutes);
 app.use('/api',zoneRoutes);
 app.use('/api',scheduleRoutes);
+app.use('/api',pickupRoutes);
+app.use('/api',bagRoutes);
 
 const port = process.env.PORT || 3000;
 app.listen(port,()=>{
