@@ -119,3 +119,53 @@ exports.loginUser = async (req, res) => {
         });
     }
 };
+// user sees which driver is coming for pickup
+exports.viewUserPickupDriver = async (req, res) => {
+    try {
+        const { UserID } = req.query;
+
+        const request = new sql.Request();
+
+        const result = await request
+            .input('UserID', UserID)
+            .query(`
+                SELECT TOP 1
+                    d.DriverID,
+                    d.FullName AS DriverName,
+                    d.Phone AS DriverPhone,
+
+                    v.VehicleID,
+                    v.PlateNumber,
+                    v.Model,
+
+                    p.PickupID,
+                    p.Status AS PickupStatus,
+                    p.ScannedAt,
+
+                    dl.Latitude,
+                    dl.Longitude,
+                    dl.RecordedAt
+                FROM Bags b
+                INNER JOIN Pickups p ON b.BagID = p.BagID
+                INNER JOIN Drivers d ON p.DriverID = d.DriverID
+                LEFT JOIN Vehicles v ON p.VehicleID = v.VehicleID
+                LEFT JOIN DriverLocationLogs dl ON d.DriverID = dl.DriverID
+                WHERE b.UserID = @UserID
+                ORDER BY p.ScannedAt DESC
+            `);
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({
+                message: 'No pickup information found'
+            });
+        }
+
+        res.status(200).json(result.recordset[0]);
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
