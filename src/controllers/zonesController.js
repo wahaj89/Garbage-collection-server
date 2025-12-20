@@ -200,4 +200,109 @@ exports.viewActiveCompanyZones = async (req, res) => {
         });
     }
 };
+//Assign User to Zone 
+exports.assignUserToZone = async (req, res) => {
+    try {
+        const { UserID, ZoneID } = req.body;
+
+        if (!UserID || !ZoneID) {
+            return res.status(400).json({
+                message: 'UserID and ZoneID are required'
+            });
+        }
+
+        const request = new sql.Request();
+        const check = await request
+            .input('UserID', UserID)
+            .input('ZoneID', ZoneID)
+            .query(`
+                SELECT * FROM UserZones
+                WHERE UserID = @UserID AND ZoneID = @ZoneID
+            `);
+
+        if (check.recordset.length > 0) {
+            return res.status(409).json({
+                message: 'User already assigned to this zone'
+            });
+        }
+
+        await request
+            .query(`
+                INSERT INTO UserZones (UserID, ZoneID)
+                VALUES (@UserID, @ZoneID)
+            `);
+
+        res.status(201).json({
+            message: 'User assigned to zone successfully'
+        });
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
+//view user's in zone
+
+exports.viewUsersInZone = async (req, res) => {
+    try {
+       
+        const { ZoneID } = req.query;
+
+        const request = new sql.Request();
+
+        const result = await request
+            .input('ZoneID', ZoneID)
+            .query(`
+                SELECT 
+                    u.UserID,
+                    u.FullName,
+                    u.Email,
+                    u.Phone,
+                    u.Address
+                FROM UserZones uz
+                INNER JOIN Users u ON uz.UserID = u.UserID
+                WHERE uz.ZoneID = @ZoneID
+            `);
+      
+        res.status(200).json(result.recordset);
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
+//view user's zone
+exports.viewUserZones = async (req, res) => {
+    try {
+        const { UserID } = req.query;
+
+        const request = new sql.Request();
+
+        const result = await request
+            .input('UserID', UserID)
+            .query(`
+                SELECT 
+                    z.ZoneID,
+                    z.Name AS ZoneName,
+                    z.Description
+                FROM UserZones uz
+                INNER JOIN Zones z ON uz.ZoneID = z.ZoneID
+                WHERE uz.UserID = @UserID
+            `);
+
+        res.status(200).json(result.recordset);
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
+
+
 
