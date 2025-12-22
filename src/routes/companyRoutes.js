@@ -9,4 +9,6 @@ router.post('/addService',companyController.addCompanyService);
 router.patch('/updateService',companyController.updateCompanyService);
 router.get('/viewCompanies',companyController.viewCompanies);
 router.get('/viewServices',companyController.viewServices);
+router.get('/viewCompanyComplaints',companyController.viewCompanyComplaints);
+router.patch('/updateComplaintStatus',companyController.updateComplaintStatus);
 module.exports=router;

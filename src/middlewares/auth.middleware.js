@@ -10,7 +10,7 @@ const authMiddleware = (req, res, next) => {
             });
         }
 
-        // Expected format: Bearer TOKEN
+       
         const token = authHeader.split(' ')[1];
 
         if (!token) {
@@ -24,8 +24,8 @@ const authMiddleware = (req, res, next) => {
             process.env.JWT_SECRET || 'secretkey'
         );
 
-        // attach user info to request
-        req.user = decoded; // { UserID, Role }
+      
+        req.user = decoded;
 
         next();
 

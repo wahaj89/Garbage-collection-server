@@ -1,8 +1,8 @@
 const sql = require('../config/db');
-const QRCodeLib = require('qrcode');
+
 const { v4: uuidv4 } = require('uuid');
 
-// add bag (with QR generation )
+// add bag 
 exports.addBag = async (req, res) => {
     try {
         let {
@@ -34,7 +34,7 @@ exports.addBag = async (req, res) => {
             const checkReq = new sql.Request();
             const dup = await checkReq
                 .input('QRCode', QRCode)
-                .query(`SELECT 1 AS existsFlag FROM Bags WHERE QRCode = @QRCode`);
+                .query(`SELECT 1 AS exists FROM Bags WHERE QRCode = @QRCode`);
 
             if (dup.recordset.length === 0) {
                 isUnique = true;
@@ -71,10 +71,6 @@ exports.addBag = async (req, res) => {
         });
 
     } catch (err) {
-        if (err && err.message && err.message.includes('UNIQUE') || err.message.includes('Violation')) {
-            return res.status(409).json({ message: 'QR code already exists. Try again.' });
-        }
-
         return res.status(500).json({
             message: 'Server Error',
             error: err.message

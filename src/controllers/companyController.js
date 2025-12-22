@@ -265,4 +265,74 @@ exports.viewServices = async (req, res) => {
         });
     }
 };
+// view company complaints
+exports.viewCompanyComplaints = async (req, res) => {
+    try {
+        const { CompanyID } = req.query;
+
+        const request = new sql.Request();
+
+        const result = await request
+            .input('CompanyID', CompanyID)
+            .query(`
+                SELECT 
+                    c.ComplaintID,
+                    u.FullName AS UserName,
+                    c.Subject,
+                    c.Description,
+                    c.Status,
+                    c.CreatedAt
+                FROM Complaints c
+                INNER JOIN Users u ON c.UserID = u.UserID
+                WHERE c.CompanyID = @CompanyID
+                ORDER BY c.CreatedAt DESC
+            `);
+
+        res.status(200).json(result.recordset);
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
+// update complaint status
+exports.updateComplaintStatus = async (req, res) => {
+    try {
+        const { ComplaintID, Status } = req.body;
+        const AdminID = req.user.UserID; 
+
+        if (!ComplaintID || !Status) {
+            return res.status(400).json({
+                message: 'ComplaintID and Status are required'
+            });
+        }
+
+        const request = new sql.Request();
+
+        await request
+            .input('ComplaintID', ComplaintID)
+            .input('Status', Status)
+            .input('AdminID', AdminID)
+            .query(`
+                UPDATE Complaints
+                SET 
+                    Status = @Status,
+                    ResolvedAt = GETDATE(),
+                    AssignedToUserID = @AdminID
+                WHERE ComplaintID = @ComplaintID
+            `);
+
+        res.status(200).json({
+            message: 'Complaint status updated'
+        });
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
 

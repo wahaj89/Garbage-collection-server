@@ -12,7 +12,7 @@ exports.registerUser = async (req, res) => {
                 message: 'FullName, Email and Password are required'
             });
         }
-
+ 
         const request = new sql.Request();
         const check = await request
             .input('Email', Email)
@@ -23,8 +23,9 @@ exports.registerUser = async (req, res) => {
                 message: 'Email already exists'
             });
         }
-
+        
         const Rounds = 10;
+       
         const hashedPassword = await bcrypt.hash(Password, Rounds);
 
     
@@ -169,3 +170,71 @@ exports.viewUserPickupDriver = async (req, res) => {
         });
     }
 };
+// add complaint 
+exports.addComplaint = async (req, res) => {
+    try {
+        const { CompanyID, Subject, Description } = req.body;
+        const UserID = req.user.UserID; // JWT se
+
+        if (!CompanyID || !Subject) {
+            return res.status(400).json({
+                message: 'CompanyID and Subject are required'
+            });
+        }
+
+        const request = new sql.Request();
+
+        await request
+            .input('UserID', UserID)
+            .input('CompanyID', CompanyID)
+            .input('Subject', Subject)
+            .input('Description', Description)
+            .query(`
+                INSERT INTO Complaints
+                (UserID, CompanyID, Subject, Description, Status)
+                VALUES
+                (@UserID, @CompanyID, @Subject, @Description, 'Open')
+            `);
+
+        res.status(201).json({
+            message: 'Complaint submitted successfully'
+        });
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
+// view user complaints
+exports.viewUserComplaints = async (req, res) => {
+    try {
+        const UserID = req.user.UserID;
+
+        const request = new sql.Request();
+
+        const result = await request
+            .input('UserID', UserID)
+            .query(`
+                SELECT 
+                    ComplaintID,
+                    Subject,
+                    Description,
+                    Status,
+                    CreatedAt
+                FROM Complaints
+                WHERE UserID = @UserID
+                ORDER BY CreatedAt DESC
+            `);
+
+        res.status(200).json(result.recordset);
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        });
+    }
+};
+
