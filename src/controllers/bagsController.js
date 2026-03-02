@@ -49,7 +49,6 @@ exports.addBag = async (req, res) => {
             return res.status(500).json({ message: 'Failed to generate unique QR code, try again' });
         }
 
-       
         const insertReq = new sql.Request();
         insertReq
             .input('UserID', UserID)
@@ -61,7 +60,6 @@ exports.addBag = async (req, res) => {
 
         const insertQuery = `
             INSERT INTO Bags (UserID, CompanyID, SubscriptionID, QRCode, BagType, WeightLimit, IsActive)
-            OUTPUT INSERTED.BagID
             VALUES (@UserID, @CompanyID, @SubscriptionID, @QRCode, @BagType, @WeightLimit, 1)
         `;
 

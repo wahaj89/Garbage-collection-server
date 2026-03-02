@@ -51,8 +51,6 @@ exports.viewZones = async (req, res) => {
                 GeoJSON
             FROM Zones
         `);
-
-        // GeoJSON string → object
         const zones = result.recordset.map(zone => ({
             ...zone,
             GeoJSON: zone.GeoJSON ? JSON.parse(zone.GeoJSON) : null

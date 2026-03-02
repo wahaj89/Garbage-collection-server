@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 // register user
 exports.registerUser = async (req, res) => {
     try {
-        const { FullName, Email, Password, Phone, Address } = req.body;
+        const { FullName, Email, Password, Phone, latlng } = req.body;
 
         if (!FullName || !Email || !Password) {
             return res.status(400).json({
@@ -33,12 +33,12 @@ exports.registerUser = async (req, res) => {
             .input('FullName', FullName)
             .input('PasswordHash', hashedPassword) 
             .input('Phone', Phone)
-            .input('Address', Address)
+            .input('latlng', latlng)
             .query(`
                 INSERT INTO Users 
-                (FullName, Email, PasswordHash, Phone, Address, Role)
+                (FullName, Email, PasswordHash, Phone, latlng, Role)
                 VALUES 
-                (@FullName, @Email, @PasswordHash, @Phone, @Address, 'User')
+                (@FullName, @Email, @PasswordHash, @Phone, @latlng, 'User')
             `);
 
         res.status(201).json({
@@ -63,7 +63,6 @@ exports.loginUser = async (req, res) => {
                 message: 'Email and Password are required'
             });
         }
-
         const request = new sql.Request();
 
         const result = await request
@@ -90,15 +89,15 @@ exports.loginUser = async (req, res) => {
                 message: 'Invalid email or password'
             });
         }
-
        
         const token = jwt.sign(
             {
                 UserID: user.UserID,
+                UserName:user.FullName,
                 Role: user.Role
             },
             process.env.JWT_SECRET || 'secretkey',
-            { expiresIn: '1d' }
+            { expiresIn: '7d' }
         );
 
       
@@ -134,15 +133,9 @@ exports.viewUserPickupDriver = async (req, res) => {
                     d.DriverID,
                     d.FullName AS DriverName,
                     d.Phone AS DriverPhone,
-
                     v.VehicleID,
                     v.PlateNumber,
-                    v.Model,
-
-                    p.PickupID,
-                    p.Status AS PickupStatus,
-                    p.ScannedAt,
-
+                    v.Model,  
                     dl.Latitude,
                     dl.Longitude,
                     dl.RecordedAt
@@ -237,4 +230,44 @@ exports.viewUserComplaints = async (req, res) => {
         });
     }
 };
+// view all users with subscription from a specific company 
+exports.viewCompanySubscribers = async (req, res) => {
+    try{
+        const { CompanyID } = req.user;
 
+        if (!CompanyID) {
+            return res.status(400).json({
+                message: 'CompanyID is required'
+            });
+        }
+        const request = new sql.Request();
+
+        const result = await request
+            .input('CompanyID', CompanyID)
+            .query(`
+                SELECT
+                    u.UserID,
+                    u.FullName,
+                    u.Email,            
+
+                    s.StartDate,
+                    s.EndDate,
+                    s.Status                                            
+
+                FROM Users u
+                INNER JOIN Subscriptions s ON u.UserID = s.UserID
+                WHERE s.CompanyID = @CompanyID
+                AND s.Status = 'Active'
+            `);
+         var response=   res.status(200).json(result.recordset);
+         if(response){
+            console.log("Subscribers retrieved successfully");
+         }
+
+    }catch(err){
+        res.status(500).json({
+            message: 'Server Error',
+            error: err.message
+        }); 
+    }
+}

@@ -1,5 +1,8 @@
 const express=require('express');
 const sql=require('../config/db.js');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
 // Add Company 
 exports.addCompany = async (req, res) => {
     try {
@@ -8,38 +11,28 @@ exports.addCompany = async (req, res) => {
             Email,
             Phone,
             Address,
-            RegistrationNumber
+            RegistrationNumber,
+            password
         } = req.body;
-
-        const UserID = req.user.UserID; 
-
         if (!Name || !Email) {
             return res.status(400).json({
                 message: 'Company name and email are required'
             });
         }
+    
+            const Rounds = 10;
+           
+            const passwordHash = await bcrypt.hash(password, Rounds);
 
         const request = new sql.Request();
-        const check = await request
-            .input('UserID', UserID)
-            .query(`
-                SELECT *
-                FROM Companies
-                WHERE CreatedByUserID = @UserID
-            `);
-
-        if (check.recordset.length > 0) {
-            return res.status(400).json({
-                message: 'You have already registered a company'
-            });
-        }
+    
         await request
             .input('Name', Name)
             .input('Email', Email)
             .input('Phone', Phone)
             .input('Address', Address)
             .input('RegistrationNumber', RegistrationNumber)
-            .input('CreatedByUserID', UserID)
+            .input('passwordhash', passwordHash)
             .query(`
                 INSERT INTO Companies
                 (
@@ -49,7 +42,8 @@ exports.addCompany = async (req, res) => {
                     Address,
                     RegistrationNumber,
                     Status,
-                    CreatedByUserID
+                    passwordhash
+
                 )
                 VALUES
                 (
@@ -59,7 +53,7 @@ exports.addCompany = async (req, res) => {
                     @Address,
                     @RegistrationNumber,
                     'Pending',
-                    @CreatedByUserID
+                    @passwordhash
                 )
             `);
 
@@ -100,6 +94,78 @@ exports.viewCompanies = async (req, res) => {
         });
     }
 };
+
+//login company
+
+exports.loginCompany = async (req, res) => {
+    try {
+        const { Email, Password } = req.body;
+        if (!Email || !Password) {
+            return res.status(400).json({
+                message: 'Email and password are required'
+            });
+        }
+
+        const request = new sql.Request();
+        const result = await request
+            .input('Email', Email)
+            .query(`
+                SELECT CompanyID, Name, Email, PasswordHash, Status
+                FROM Companies
+                WHERE Email = @Email
+            `);
+
+        if (result.recordset.length === 0) {
+            return res.status(401).json({
+                message: 'Invalid email or password'
+            });
+        }
+
+        const company = result.recordset[0];
+
+        if (company.Status !== 'Approved') {
+            return res.status(403).json({
+                message: 'Company not approved yet'
+            });
+        }
+
+        const isMatch = await bcrypt.compare(Password, company.PasswordHash);
+        if (!isMatch) {
+            return res.status(401).json({
+                message: 'Invalid email or password'
+            });
+        }
+
+        // Generate JWT token
+        const token = jwt.sign(
+            {
+                CompanyID: company.CompanyID,
+                Email: company.Email,
+                Name: company.Name,
+                role: 'Company'
+            },
+            process.env.JWT_SECRET, 
+            { expiresIn: '7d' } 
+        );
+
+        res.status(200).json({
+            message: 'Login successful',
+            token,
+            CompanyID: company.CompanyID,
+            Name: company.Name,
+            Email: company.Email
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({
+            message: 'Server error',
+            error: err.message
+        });
+    }
+};
+
+
 
 
 // Add Company Service
@@ -239,13 +305,15 @@ exports.updateCompanyService = async (req, res) => {
     }
 };
 
-//view Company Services
 // view all services
 exports.viewServices = async (req, res) => {
     try {
+        const{ CompanyID } = req.query;
+        console.log('Query params:', req.query);
         const request = new sql.Request();
 
-        const result = await request.query(`
+        const result = await request.input('CompanyID', CompanyID)
+        .query(`
             SELECT 
                 ServiceID,
                 CompanyID,
@@ -254,6 +322,7 @@ exports.viewServices = async (req, res) => {
                 BasePrice,
                 IsActive
             FROM CompanyServices
+            where CompanyID = @CompanyID
         `);
 
         res.status(200).json(result.recordset);
@@ -335,4 +404,3 @@ exports.updateComplaintStatus = async (req, res) => {
         });
     }
 };
-

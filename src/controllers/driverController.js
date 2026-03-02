@@ -2,14 +2,14 @@ const sql = require('../config/db.js');
 // add driver
 exports.addDriver = async (req, res) => {
     try {
-        const { CompanyID, FullName, Phone, LicenseNo, VehicleID } = req.body;
+        const { FullName, Phone, LicenseNo, VehicleID } = req.body;
+        const { CompanyID } = req.user;
 
         if (!CompanyID || !FullName) {
             return res.status(400).json({
                 message: 'CompanyID and FullName are required'
             });
         }
-
         const request = new sql.Request();
 
         await request
@@ -65,7 +65,7 @@ exports.viewDrivers = async (req, res) => {
 // view drivers by company
 exports.viewCompanyDrivers = async (req, res) => {
     try {
-        const { CompanyID } = req.params;
+      const { CompanyID } = req.user;
 
         const request = new sql.Request();
 

@@ -63,7 +63,7 @@ exports.viewVehicles = async (req, res) => {
 // view vehicles by company
 exports.viewCompanyVehicles = async (req, res) => {
     try {
-        const { CompanyID } = req.params;
+        const { CompanyID } = req.query;
 
         const request = new sql.Request();
 

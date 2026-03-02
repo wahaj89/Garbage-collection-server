@@ -4,43 +4,60 @@ const sql = require('../config/db.js');
 exports.addPlan = async (req, res) => {
     try {
         const {
-            CompanyID,
+    
             Name,
             BagsperDay,
             MonthlyPrice,
             Description,
-            isActive
+            
+        
         } = req.body;
+        const { CompanyID } = req.user;
         const request = new sql.Request();
         request.input('CompanyID', CompanyID);
         request.input('Name', Name);
         request.input('BagsperDay', BagsperDay);
         request.input('MonthlyPrice', MonthlyPrice);
         request.input('Description', Description);
-        request.input('isActive', isActive);
         await request.query(`INSERT INTO SubscriptionPlans (CompanyID,Name,BagsperDay,MonthlyPrice,Description,isActive)
-                              VALUES (@CompanyID,@Name,@BagsperDay,@MonthlyPrice,@Description,@isActive)`);
+                              VALUES (@CompanyID,@Name,@BagsperDay,@MonthlyPrice,@Description,1)`);
         return res.status(200).json({ message: "Plan added successfully" });
     } catch (err) {
         return res.status(500).json({ message: "Server Error", error: err.message });
     }
 };
-//view all Plans
+// GET plans by company
 exports.viewPlans = async (req, res) => {
-    try {
-        const request = new sql.Request();
-        const { CompanyID } = req.body;
-        request.input('CompanyID', CompanyID);
-        const response = await request.query("Select * from SubscriptionPlans where CompanyId=@CompanyID");
-        return res.status(200).json({ response });
-    } catch (err) {
-        return res.status(500).json({ message: "Server Error", error: err.message });
+  try {
+    const { CompanyID } = req.query;
+
+    if (!CompanyID) {
+      return res.status(400).json({ message: "CompanyID is required" });
     }
+
+    const request = new sql.Request();
+    const result = await request
+      .input('CompanyID', CompanyID)
+      .query(`
+        SELECT PlanID, Name, BagsPerDay, MonthlyPrice, Description
+        FROM SubscriptionPlans
+        WHERE CompanyID = @CompanyID AND isActive = 1
+      `);
+
+    return res.status(200).json(result.recordset);
+  } catch (err) {
+    return res.status(500).json({
+      message: "Server Error",
+      error: err.message
+    });
+  }
 };
+
 //Buy Subscription
 exports.buySubscription = async (req, res) => {
     try {
-        const { UserID, CompanyID, PlanID } = req.body;
+        const {  CompanyID, PlanID } = req.body;
+        const UserID = req.user.UserID; 
 
         
         if (!UserID || !CompanyID || !PlanID) {
