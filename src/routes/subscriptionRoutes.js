@@ -9,7 +9,9 @@ router.post('/addPlan',authMiddleware,subscriptionController.addPlan);
 router.get('/viewPlans',subscriptionController.viewPlans);
 router.post('/buySubscription',authMiddleware,subscriptionController.buySubscription);
 router.patch('/updateSubscription',subscriptionController.updateSubscription);
-router.patch('/cancelSubscription',subscriptionController.cancelSubscription);
+router.post('/cancelSubscription',authMiddleware,subscriptionController.cancelSubscription);
 router.patch('/renewSubscription',subscriptionController.renewSubscription);
+router.get('/viewPlans',authMiddleware,subscriptionController.viewPlans);
+
  
 module.exports=router;

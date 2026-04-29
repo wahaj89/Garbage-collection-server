@@ -5,7 +5,7 @@ const zonesController = require('../controllers/zonesController');
 
 router.post('/addZone', zonesController.addZone);
 router.get('/viewZones', zonesController.viewZones);
-router.get('/viewCompanyZones/:CompanyID', zonesController.viewCompanyZones);
+router.get('/viewCompanyZones', zonesController.viewCompanyZones);
 router.get('/viewActiveCompanyZones/:CompanyID', zonesController.viewActiveCompanyZones);
 router.get('/viewActiveZones', zonesController.viewActiveZones);
 router.patch('/deleteZone/:ZoneID', zonesController.removeZone);

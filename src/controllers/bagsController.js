@@ -3,79 +3,83 @@ const sql = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 
 // add bag 
-exports.addBag = async (req, res) => {
+exports.generateBags = async (req, res) => {
+
     try {
+
         let {
             UserID,
             CompanyID,
-            SubscriptionID = null,
-            QRCode,           
+            Quantity,
             BagType = null,
             WeightLimit = null
         } = req.body;
 
-        if (!UserID || !CompanyID) {
+        if (!UserID || !CompanyID || !Quantity) {
             return res.status(400).json({
-                message: 'UserID and CompanyID are required'
+                message: "UserID, CompanyID and Quantity are required"
             });
         }
 
-        
-        if (!QRCode) {
-         
-            QRCode = `${CompanyID}-${UserID}-${Date.now()}-${uuidv4().slice(0,8)}`;
+       
+        const subReq = new sql.Request();
+
+        const subResult = await subReq
+            .input('UserID', sql.Int, UserID)
+            .query(`
+                SELECT TOP 1 SubscriptionID
+                FROM Subscriptions
+                WHERE UserID = @UserID
+                AND Status = 'Active'
+            `);
+
+        if (subResult.recordset.length === 0) {
+            return res.status(400).json({
+                message: "No active subscription found for this user"
+            });
         }
 
-        
-        let isUnique = false;
-        let attempts = 0;
+        const SubscriptionID = subResult.recordset[0].SubscriptionID;
 
-        while (!isUnique && attempts < 5) {
-            const checkReq = new sql.Request();
-            const dup = await checkReq
-                .input('QRCode', QRCode)
-                .query(`SELECT 1 AS exists FROM Bags WHERE QRCode = @QRCode`);
+        let generatedQRs = [];
+        for (let i = 0; i < Quantity; i++) {
 
-            if (dup.recordset.length === 0) {
-                isUnique = true;
-            } else {
-            
-                QRCode = `${CompanyID}-${UserID}-${Date.now()}-${uuidv4().slice(0,8)}`;
-                attempts++;
-            }
+            let QRCode = `${CompanyID}-${UserID}-${Date.now()}-${uuidv4().slice(0,8)}`;
+
+            const insertReq = new sql.Request();
+
+            await insertReq
+                .input('UserID', sql.Int, UserID)
+                .input('QRCode', sql.VarChar, QRCode)
+                .input('BagType', sql.VarChar, BagType)
+                .input('WeightLimit', sql.Decimal, WeightLimit)
+                .query(`
+                    INSERT INTO Bags
+                    (UserID, QRCode, BagType, IsActive, CreatedAt,WeightLimit)
+                    VALUES
+                    (@UserID, @QRCode, @BagType, 1, GETDATE(), @WeightLimit)
+                `);
+
+            generatedQRs.push(QRCode);
         }
 
-        if (!isUnique) {
-            return res.status(500).json({ message: 'Failed to generate unique QR code, try again' });
-        }
-
-        const insertReq = new sql.Request();
-        insertReq
-            .input('UserID', UserID)
-            .input('CompanyID', CompanyID)
-            .input('SubscriptionID', SubscriptionID)
-            .input('QRCode', QRCode)
-            .input('BagType', BagType)
-            .input('WeightLimit', WeightLimit);
-
-        const insertQuery = `
-            INSERT INTO Bags (UserID, CompanyID, SubscriptionID, QRCode, BagType, WeightLimit, IsActive)
-            VALUES (@UserID, @CompanyID, @SubscriptionID, @QRCode, @BagType, @WeightLimit, 1)
-        `;
-
-        const insertResult = await insertReq.query(insertQuery);
         return res.status(201).json({
-            message: 'Bag added successfully',
+            message: "Bags generated successfully",
+            subscription: SubscriptionID,
+            total: generatedQRs.length,
+            qrCodes: generatedQRs
         });
 
     } catch (err) {
+
         return res.status(500).json({
-            message: 'Server Error',
+            message: "Server Error",
             error: err.message
         });
-    }
-};
 
+    }
+
+};
 //view bags
 exports.viewUserBags = async (req, res) => {
     try {

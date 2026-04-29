@@ -65,7 +65,6 @@ exports.buySubscription = async (req, res) => {
                 message: "UserID, CompanyID and PlanID are required"
             });
         }
-
         const StartDate = new Date();
         const EndDate = new Date();
         EndDate.setMonth(EndDate.getMonth() + 1);
@@ -301,3 +300,31 @@ exports.renewSubscription = async (req, res) => {
     }
 };
 
+
+exports.viewPlans = async (req, res) => {
+    try {
+    
+        const { CompanyID } = req.query;
+
+     
+        const request = new sql.Request();
+        const result = await request
+            .input('CompanyID', CompanyID)
+            .query(`
+                SELECT PlanID, Name, BagsPerDay, MonthlyPrice, Description,Type
+                FROM SubscriptionPlans
+                WHERE CompanyID = @CompanyID AND isActive = 1
+            `);
+
+        return res.status(200).json(result.recordset);
+
+    } catch (err) {
+        console.error("Error in viewPlans:", err.message);
+
+        return res.status(500).json({
+            message: "Server Error",
+            error: err.message
+        });
+    }
+
+};

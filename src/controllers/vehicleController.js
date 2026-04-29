@@ -2,8 +2,8 @@ const sql=require('../config/db.js')
 // add vehicle
 exports.addVehicle = async (req, res) => {
     try {
-        const { CompanyID, PlateNumber, Model, Capacity } = req.body;
-
+        const {  PlateNumber, Model, Capacity } = req.body;
+const { CompanyID } = req.query;
         if (!CompanyID || !PlateNumber) {
             return res.status(400).json({
                 message: 'CompanyID and PlateNumber are required'

@@ -7,6 +7,7 @@ const {
     viewCompanyVehicles,
     removeVehicle
 } = require('../controllers/vehicleController');
+const authMiddleware = require('../middlewares/auth.middleware');
 
 router.post('/addVehicle', addVehicle);
 router.get('/viewVehicles', viewVehicles);

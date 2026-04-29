@@ -8,5 +8,14 @@ router.get('/userPickupDriver', userController.viewUserPickupDriver);
 router.post('/addComplaint',userController.addComplaint);
 router.get('/viewComplaints',userController.viewUserComplaints);
 router.get('/viewSubscribedUsers',authmiddleWare,userController.viewCompanySubscribers);
+router.get('/isSubscribed',authmiddleWare,userController.isSubscribed);
+router.get('/viewstatus',authmiddleWare,userController.subscriptionStatus);
+router.get('/userInfo',authmiddleWare,userController.getUserDetails);
+router.get('/getCompaniesByLocation',authmiddleWare,userController.getCompaniesByLocation);
+router.get('/getUserCompany',authmiddleWare,userController.getUserCompany);
+router.post('/submitComplaint',authmiddleWare,userController.submitComplaint);
+router.post('/requestExtraPickup',authmiddleWare,userController.requestExtraPickup);
+router.get('/getUserPickups',authmiddleWare,userController.viewPastPickups);
+router.post('/signin',userController.login);
 
 module.exports=router;

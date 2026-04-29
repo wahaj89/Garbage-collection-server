@@ -1,5 +1,6 @@
 const express = require('express');
 const sql = require('../config/db.js');
+const turf = require('@turf/turf');
 // Add Zone
 exports.addZone = async (req, res) => {
     try {
@@ -68,7 +69,7 @@ exports.viewZones = async (req, res) => {
 // view zones by company (GeoJSON parsed)
 exports.viewCompanyZones = async (req, res) => {
     try {
-        const { CompanyID } = req.params;
+        const { CompanyID } = req.query;
         const request = new sql.Request();
 
         const result = await request
@@ -301,6 +302,10 @@ exports.viewUserZones = async (req, res) => {
         });
     }
 };
+
+
+
+
 
 
 
