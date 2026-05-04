@@ -17,5 +17,7 @@ router.post('/submitComplaint',authmiddleWare,userController.submitComplaint);
 router.post('/requestExtraPickup',authmiddleWare,userController.requestExtraPickup);
 router.get('/getUserPickups',authmiddleWare,userController.viewPastPickups);
 router.post('/signin',userController.login);
+router.get('/getDriverLiveLocation',authmiddleWare,userController.getDriverLiveLocation);
+router.get('/scheduled-pickup',authmiddleWare,userController.getScheduledPickup);
 
 module.exports=router;

@@ -454,84 +454,87 @@ exports.viewExtraRequests = async (req, res) => {
     });
   }
 };
-//create slot (weekly system)
 exports.createSlot = async (req, res) => {
   try {
     const { ZoneID, DayOfWeek, StartTime, EndTime, DriverID } = req.body;
 
-    const request = new sql.Request();
+    // ✅ 1. Validation
+    if (!ZoneID || !DayOfWeek || !StartTime || !EndTime || !DriverID) {
+      return res.status(400).json({ message: "ZoneID, DayOfWeek, StartTime, EndTime, DriverID are required" });
+    }
 
-    // 🔥 1. Conflict check (time overlap + same driver)
-    const conflict = await request
-      .input("DriverID", DriverID)
-      .input("StartTime", StartTime)
-      .input("EndTime", EndTime)
+    // ✅ 2. Conflict check — same driver, same day, overlapping time
+    const conflict = await new sql.Request()
+      .input("DriverID", sql.Int, DriverID)
+      .input("DayOfWeek", sql.NVarChar, DayOfWeek)
+      .input("StartTime", sql.NVarChar, StartTime)
+      .input("EndTime", sql.NVarChar, EndTime)
       .query(`
         SELECT s.*
         FROM Schedules sch
         JOIN Slots s ON sch.SlotID = s.SlotID
         WHERE sch.DriverID = @DriverID
-        AND (
-          @StartTime < s.EndTime
-          AND @EndTime > s.StartTime
-        )
+          AND s.DayOfWeek   = @DayOfWeek
+          AND s.IsActive     = 1
+          AND sch.Active     = 1
+          AND (
+            @StartTime < s.EndTime
+            AND @EndTime > s.StartTime
+          )
       `);
 
     if (conflict.recordset.length > 0) {
-      return res.status(400).json({
-        message: "Driver already assigned in this time slot",
-      });
+      return res.status(400).json({ message: "Driver already assigned in this time slot" });
     }
 
-    // 🔥 2. Get Vehicle
-    const driver = await request
-      .input("DriverID2", DriverID)
+    // ✅ 3. Driver existence check
+    const driverResult = await new sql.Request()
+      .input("DriverID", sql.Int, DriverID)
       .query(`
-        SELECT VehicleID 
-        FROM Drivers 
-        WHERE DriverID = @DriverID2
+        SELECT DriverID, VehicleID
+        FROM Drivers
+        WHERE DriverID = @DriverID
       `);
 
-    if (!driver.recordset.length) {
+    if (!driverResult.recordset.length) {
       return res.status(404).json({ message: "Driver not found" });
     }
 
-    const VehicleID = driver.recordset[0].VehicleID;
+    // const VehicleID = driverResult.recordset[0].VehicleID;
+    // 👆 Uncomment if you need VehicleID in Schedules table later
 
-    // 🔥 3. Handle SlotDate safely (IMPORTANT FIX)
-    const finalSlotDate = SlotDate || null;
+   
 
-    // 🔥 4. Create Slot
-    const slot = await new sql.Request()
-      .input("ZoneID", ZoneID)
-      .input("SlotDate", finalSlotDate)
-      .input("DayOfWeek", DayOfWeek || null)
-      .input("StartTime", StartTime)
-      .input("EndTime", EndTime)
+    // ✅ 5. Insert Slot
+    const slotResult = await new sql.Request()
+      .input("ZoneID",    sql.Int,      ZoneID)
+      .input("DayOfWeek", sql.NVarChar, DayOfWeek)
+      .input("StartTime", sql.NVarChar, StartTime)
+      .input("EndTime",   sql.NVarChar, EndTime)
       .query(`
-        INSERT INTO Slots
-        (ZoneID,  StartTime, EndTime, IsActive, CreatedAt, DayOfWeek)
+        INSERT INTO Slots (ZoneID, StartTime, EndTime, IsActive, CreatedAt, DayOfWeek)
         OUTPUT INSERTED.SlotID
         VALUES (@ZoneID,  @StartTime, @EndTime, 1, GETDATE(), @DayOfWeek)
       `);
 
-    const SlotID = slot.recordset[0].SlotID;
+    const SlotID = slotResult.recordset[0].SlotID;
 
-    // 🔥 5. Insert Schedule
+    // ✅ 6. Insert Schedule
     await new sql.Request()
-      .input("SlotID", SlotID)
-      .input("DriverID", DriverID)
+      .input("SlotID",   sql.Int, SlotID)
+      .input("DriverID", sql.Int, DriverID)
       .query(`
         INSERT INTO Schedules (SlotID, DriverID, Active)
-        VALUES (@SlotID, @DriverID,  1)
+        VALUES (@SlotID, @DriverID, 1)
       `);
 
-    return res.json({
+    return res.status(201).json({
       message: "Slot created successfully",
-      SlotID
+      SlotID,
     });
 
   } catch (err) {
+    console.error("createSlot error:", err);
     return res.status(500).json({ error: err.message });
   }
 };
@@ -565,43 +568,37 @@ exports.getDriversWithVehicles = async (req, res) => {
 //get company schedule
 exports.getSchedules = async (req, res) => {
   try {
-    const {CompanyID} = req.query;
-    console.log("CompanyID from query:", CompanyID); // Debug log
+    const { CompanyID } = req.query;
+    console.log("CompanyID from query:", CompanyID);
 
-    const request = new sql.Request();
-
-    const result = await request
-    .input("CompanyID", CompanyID)
-    .query(`
-      SELECT 
-        sch.ScheduleID,
-        sch.Active,
-
-        s.SlotID,
-        s.DayOfWeek,
-        s.StartTime,
-        s.EndTime,
-
-        d.DriverID,
-        d.FullName AS DriverName,
-
-        v.VehicleID,
-        v.PlateNumber,
-
-        z.ZoneID,
-        z.Name
-
-      FROM Schedules sch
-      INNER JOIN Slots s ON sch.SlotID = s.SlotID
-      INNER JOIN Drivers d ON sch.DriverID = d.DriverID
-      LEFT JOIN Vehicles v ON d.VehicleID = v.VehicleID
-      LEFT JOIN Zones z ON s.ZoneID = z.ZoneID
-
-      WHERE d.CompanyID = @CompanyID
-    `);
+    const result = await new sql.Request()
+      .input("CompanyID", sql.Int, CompanyID)
+      .query(`
+        SELECT 
+          sch.ScheduleID,
+          sch.Active,
+          s.SlotID,
+          s.DayOfWeek,
+          s.StartTime,
+          s.EndTime,
+          d.DriverID,
+          d.FullName AS DriverName,
+          v.VehicleID,
+          v.PlateNumber,
+          z.ZoneID,
+          z.Name AS ZoneName
+        FROM Schedules sch
+        INNER JOIN Slots s   ON sch.SlotID  = s.SlotID
+        INNER JOIN Drivers d ON sch.DriverID = d.DriverID
+        LEFT  JOIN Vehicles v ON d.VehicleID = v.VehicleID
+        LEFT  JOIN Zones z    ON s.ZoneID    = z.ZoneID
+        WHERE d.CompanyID = @CompanyID
+          AND sch.Active  = 1
+          AND s.IsActive  = 1
+        ORDER BY z.Name, s.DayOfWeek
+      `);
 
     res.json(result.recordset);
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

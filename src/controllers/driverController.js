@@ -7,7 +7,7 @@ const bcrypt = require('bcrypt');
 exports.addDriver = async (req, res) => {
     try {
         const saltRounds = 10;
-        const { FullName, Phone, LicenseNo, VehicleID, Password } = req.body;
+        const { FullName, Phone, LicenseNo, VehicleID, Password ,collectorID} = req.body;
         const { CompanyID } = req.query;
 
         if (!CompanyID || !FullName || !Password) {
@@ -28,11 +28,12 @@ exports.addDriver = async (req, res) => {
             .input('LicenseNo', LicenseNo)
             .input('VehicleID', VehicleID)
             .input('Password', hashedPassword) // encrypted password
+            .input('collectorID', collectorID)
             .query(`
                 INSERT INTO Drivers
-                (CompanyID, FullName, Phone, LicenseNo, VehicleID, IsActive, Password)
+                (CompanyID, FullName, Phone, LicenseNo, VehicleID, IsActive, Password, collectorID)
                 VALUES
-                (@CompanyID, @FullName, @Phone, @LicenseNo, @VehicleID, 1, @Password)
+                (@CompanyID, @FullName, @Phone, @LicenseNo, @VehicleID, 1, @Password, @collectorID)
             `);
 
         res.status(201).json({
@@ -46,6 +47,7 @@ exports.addDriver = async (req, res) => {
         });
     }
 };
+
 //login driver
 exports.loginDriver = async (req, res) => {
     try {
@@ -196,36 +198,25 @@ exports.removeDriver = async (req, res) => {
 // update driver location
 exports.updateDriverLocation = async (req, res) => {
     try {
-        const { DriverID, Latitude, Longitude } = req.body;
+        const { DriverID } = req.query;
+        const {  Latitude, Longitude } = req.body;
 
-        if (!DriverID || !Latitude || !Longitude) {
-            return res.status(400).json({
-                message: 'DriverID, Latitude and Longitude are required'
-            });
-        }
-
-        const request = new sql.Request();
-
-        await request
+        await new sql.Request()
             .input('DriverID', DriverID)
             .input('Latitude', Latitude)
             .input('Longitude', Longitude)
             .query(`
-                INSERT INTO DriverLocationLogs
-                (DriverID, Latitude, Longitude)
-                VALUES
-                (@DriverID, @Latitude, @Longitude)
+                UPDATE DriverLocationLogs
+                SET Latitude = @Latitude,
+                    Longitude = @Longitude
+                WHERE DriverID = @DriverID
             `);
 
-        res.status(200).json({
-            message: 'Driver location updated successfully'
-        });
+        res.status(200).json({ message: "Location updated" });
 
     } catch (err) {
-        res.status(500).json({
-            message: 'Server Error',
-            error: err.message
-        });
+        console.error(err);
+        res.status(500).json({ message: "Server error" });
     }
 };
 // get latest driver location
@@ -262,13 +253,20 @@ exports.getDriverLocation = async (req, res) => {
         });
     }
 };
-// see todays schedule
 exports.getTodaySchedule = async (req, res) => {
     try {       
         const { DriverID } = req.query;
-        console.log('DriverID:', DriverID); // Debug log to check DriverID value
+
+        const days = [
+            "Sunday","Monday","Tuesday","Wednesday",
+            "Thursday","Friday","Saturday"
+        ];
+
+        const todayName = days[new Date().getDay()];
+
         const request = new sql.Request();
         const result = await request
+            .input('DayOfWeek', todayName) // ✅ string now
             .input('DriverID', DriverID)
             .query(`      
             SELECT
@@ -282,7 +280,7 @@ exports.getTodaySchedule = async (req, res) => {
             INNER JOIN Slots s ON sch.SlotID = s.SlotID
             INNER JOIN Zones z ON s.ZoneID = z.ZoneID
             WHERE sch.DriverID = @DriverID
-            AND s.DayOfWeek = 'Tuesday'
+            AND s.DayOfWeek = @DayOfWeek
             AND sch.Active = 1
         `);
                 
@@ -290,22 +288,18 @@ exports.getTodaySchedule = async (req, res) => {
     } catch (err) {
         res.status(500).json({
             message: 'Server Error',
-
             error: err.message
         });
     }   
 };
 
 
-
 exports.getDriverPickupPoints = async (req, res) => {
   try {
-
     const { DriverID } = req.query;
-
     const request = new sql.Request();
 
-    // 1️⃣ Get Driver Zone (GeoJSON)
+    // 1️⃣ Get ALL zones of driver
     const zoneResult = await request
       .input("DriverID", sql.Int, DriverID)
       .query(`
@@ -320,28 +314,7 @@ exports.getDriverPickupPoints = async (req, res) => {
       return res.status(404).json({ message: "No active schedule found" });
     }
 
-    const zone = zoneResult.recordset[0];
-
-    let polygon;
-    try {
-      polygon = JSON.parse(zone.GeoJSON);
-    } catch (e) {
-      return res.status(400).json({ message: "Invalid GeoJSON" });
-    }
-
-    let coords = polygon.coordinates[0];
-
-    // ✅ FIX: close polygon
-    const first = coords[0];
-    const last = coords[coords.length - 1];
-
-    if (first[0] !== last[0] || first[1] !== last[1]) {
-      coords.push(first);
-    }
-
-    const shape = turf.polygon([coords]);
-
-    // 2️⃣ Get all users
+    // 2️⃣ Get users
     const usersResult = await request.query(`
         SELECT UserID, FullName, latlng
         FROM Users
@@ -350,46 +323,71 @@ exports.getDriverPickupPoints = async (req, res) => {
 
     let filteredUsers = [];
 
-    // 3️⃣ Check each user
-    for (let user of usersResult.recordset) {
+    // 3️⃣ LOOP ALL ZONES 🔥
+    for (let zone of zoneResult.recordset) {
+      let polygon;
+
       try {
-        if (!user.latlng) continue;
+        polygon = JSON.parse(zone.GeoJSON);
+      } catch {
+        continue;
+      }
 
-        const parts = user.latlng.split(",");
-        if (parts.length !== 2) continue;
+      let coords = polygon.coordinates[0];
 
-        const lat = Number(parts[0].trim());
-        const lng = Number(parts[1].trim());
+      // close polygon
+      const first = coords[0];
+      const last = coords[coords.length - 1];
 
-        if (isNaN(lat) || isNaN(lng)) continue;
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        coords.push(first);
+      }
 
-        // 🔥 IMPORTANT: [lng, lat]
-        const point = turf.point([lng, lat]);
+      const shape = turf.polygon([coords]);
 
-        const inside = turf.booleanPointInPolygon(point, shape);
+      // 4️⃣ LOOP USERS
+      for (let user of usersResult.recordset) {
+        try {
+          if (!user.latlng) continue;
 
-        if (inside) {
-          filteredUsers.push({
-            UserID: user.UserID,
-            Name: user.Name,
-            Latitude: lat,
-            Longitude: lng,
-          });
+          const [latStr, lngStr] = user.latlng.split(",");
+
+          const lat = Number(latStr.trim());
+          const lng = Number(lngStr.trim());
+
+          if (isNaN(lat) || isNaN(lng)) continue;
+
+          const point = turf.point([lng, lat]);
+
+          const inside = turf.booleanPointInPolygon(point, shape);
+
+          if (inside) {
+            filteredUsers.push({
+              UserID: user.UserID,
+              Name: user.FullName, // 🔥 FIXED
+              Latitude: lat,
+              Longitude: lng,
+            });
+          }
+        } catch (err) {
+          console.log("USER ERROR:", err.message);
         }
-      } catch (err) {
-        console.log("❌ USER ERROR:", user.UserID, err.message);
       }
     }
 
-    // 4️⃣ Response
+    // 5️⃣ REMOVE DUPLICATES 🔥🔥
+    const uniqueUsers = [
+      ...new Map(filteredUsers.map(u => [u.UserID, u])).values(),
+    ];
+
     return res.json({
       message: "Pickup points found",
-      total: filteredUsers.length,
-      data: filteredUsers,
+      total: uniqueUsers.length,
+      data: uniqueUsers,
     });
 
   } catch (err) {
-    console.log("💥 SERVER ERROR:", err);
+    console.log("SERVER ERROR:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };

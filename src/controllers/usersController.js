@@ -64,7 +64,7 @@ exports.loginUser = async (req, res) => {
     const request = new sql.Request();
 
     const result = await request.input("Email", Email).query(`
-                SELECT UserID, FullName, Email, PasswordHash, Role
+                SELECT UserID, FullName, Email, PasswordHash
                 FROM Users
                 WHERE Email = @Email
             `);
@@ -89,7 +89,6 @@ exports.loginUser = async (req, res) => {
       {
         UserID: user.UserID,
         UserName: user.FullName,
-        Role: user.Role,
       },
       process.env.JWT_SECRET || "secretkey",
       { expiresIn: "7d" },
@@ -102,7 +101,7 @@ exports.loginUser = async (req, res) => {
         UserID: user.UserID,
         FullName: user.FullName,
         Email: user.Email,
-        Role: user.Role,
+      
       },
     });
   } catch (err) {
@@ -362,30 +361,55 @@ exports.subscriptionStatus = async (req, res) => {
     });
   }
 };
-//get user details
+//user details
 exports.getUserDetails = async (req, res) => {
   try {
     const UserID = req.user.UserID;
     const request = new sql.Request();
     const result = await request.input("UserID", UserID).query(`
-                SELECT UserID, FullName, Email, Phone, latlng
-                FROM Users  
-                WHERE UserID = @UserID
-            `);
+      SELECT 
+        u.UserID, 
+        u.FullName, 
+        u.Email, 
+        u.Phone, 
+        u.latlng,
+        s.SubscriptionID,
+        s.PlanID,
+        s.StartDate,
+        s.EndDate,
+        s.Status AS SubscriptionStatus
+      FROM Users u
+      LEFT JOIN Subscriptions s 
+        ON u.UserID = s.UserID 
+        AND s.Status = 'Active'
+      WHERE u.UserID = @UserID
+    `);
+
     if (result.recordset.length === 0) {
-      return res.status(404).json({
-        message: "User not found",
-      });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    return res.status(200).json(result.recordset[0]);
+    const row = result.recordset[0];
+
+    return res.status(200).json({
+      UserID: row.UserID,
+      FullName: row.FullName,
+      Email: row.Email,
+      Phone: row.Phone,
+      latlng: row.latlng,
+      Subscription: row.SubscriptionID
+        ? {
+            SubscriptionID: row.SubscriptionID,
+            PlanID: row.PlanID,
+            StartDate: row.StartDate,
+            EndDate: row.EndDate,
+            Status: row.SubscriptionStatus,
+          }
+        : null,
+    });
   } catch (err) {
     console.error("Error in getUserDetails:", err.message);
-    return res.status(500).json({
-      message: "Server Error",
-
-      error: err.message,
-    });
+    return res.status(500).json({ message: "Server Error", error: err.message });
   }
 };
 // get companies by user location
@@ -608,7 +632,8 @@ exports.requestExtraPickup = async (req, res) => {
     }
 
     // 🔥 STEP 1: CompanyID + SubscriptionID fetch karo
-    const subResult = await new sql.Request().input("UserID", sql.Int, UserID)
+    const subResult = await new sql.Request()
+    .input("UserID", sql.Int, UserID)
       .query(`
                 SELECT TOP 1 CompanyID, SubscriptionID
                 FROM Subscriptions
@@ -623,6 +648,7 @@ exports.requestExtraPickup = async (req, res) => {
 
     const CompanyID = subResult.recordset[0].CompanyID;
     const SubscriptionID = subResult.recordset[0].SubscriptionID;
+    const Type=subResult.recordset[0].Type;
 
     // 🔥 STEP 2: Insert Request
     await new sql.Request()
@@ -630,11 +656,13 @@ exports.requestExtraPickup = async (req, res) => {
       .input("CompanyID", sql.Int, CompanyID)
       .input("SubscriptionID", sql.Int, SubscriptionID)
       .input("BagsRequested", sql.Int, BagsRequested)
-      .input("Status", sql.NVarChar, "Pending").query(`
+      .input("Status", sql.NVarChar, "Pending")
+      .input("Type", sql.NVarChar, Type)
+      .query(`
                 INSERT INTO ExtraPickupRequests
-                (UserID, CompanyID, SubscriptionID, BagsRequested, Status, RequestedAt)
+                (UserID, CompanyID, SubscriptionID, BagsRequested, Status, RequestedAt,Type)
                 VALUES
-                (@UserID, @CompanyID, @SubscriptionID, @BagsRequested, @Status, GETDATE())
+                (@UserID, @CompanyID, @SubscriptionID, @BagsRequested, @Status, GETDATE(),@Type)
             `);
 
     res.status(200).json({
@@ -647,41 +675,30 @@ exports.requestExtraPickup = async (req, res) => {
     });
   }
 };
-// view past pickups
 exports.viewPastPickups = async (req, res) => {
   try {
     const UserID = req.user.UserID;
-
     const request = new sql.Request();
-
-    const result = await request.input("UserID", sql.Int, UserID).query(`
-                SELECT 
-                    p.PickupID,
-                    p.ScannedAt,
-                    p.Latitude,
-                    p.Longitude,
-                    p.Status,
-
-                    b.BagID,
-                    b.BagType,
-
-                    v.VehicleID,
-                    v.PlateNumber,
-                    v.Model,
-
-                    d.DriverID,
-                    d.FullName AS DriverName,
-                    d.Phone AS DriverPhone
-
-                FROM Pickups p
-                INNER JOIN Bags b ON p.BagID = b.BagID
-                INNER JOIN Vehicles v ON p.VehicleID = v.VehicleID
-                LEFT JOIN Drivers d ON v.VehicleID = d.VehicleID
-
-                WHERE b.UserID = @UserID
-
-                ORDER BY p.ScannedAt DESC
-            `);
+    const result = await request
+      .input("UserID", sql.Int, UserID)
+      .query(`
+        SELECT 
+            p.PickupID,
+            p.ScannedAt,
+            p.Latitude,
+            p.Longitude,
+            p.Status,
+            b.BagID,
+            b.BagType,
+            c.CollectorID,
+            c.FullName AS CollectorName,
+            c.Phone AS CollectorPhone
+        FROM Pickups p
+        INNER JOIN Bags b ON p.BagID = b.BagID
+        LEFT JOIN Collectors c ON p.CollectorID = c.CollectorID
+        WHERE b.UserID = @UserID
+        ORDER BY p.ScannedAt DESC
+      `);
 
     res.status(200).json({
       pickups: result.recordset,
@@ -691,5 +708,212 @@ exports.viewPastPickups = async (req, res) => {
     res.status(500).json({
       message: "Server error",
     });
+  }
+};
+//track driver
+
+exports.getDriverLiveLocation = async (req, res) => {
+  try {
+    const UserID = req.user.UserID;
+
+    // ================= 1. USER LOCATION =================
+    const req1 = new sql.Request();
+    const userRes = await req1
+      .input("UserID", sql.Int, UserID)
+      .query(`SELECT latlng FROM Users WHERE UserID = @UserID`);
+
+    if (userRes.recordset.length === 0)
+      return res.status(404).json({ message: "User not found" });
+
+    const latlng = userRes.recordset[0].latlng;
+    if (!latlng)
+      return res.status(400).json({ message: "User location not set" });
+
+    const [latStr, lngStr] = latlng.split(",");
+    const lat = Number(latStr.trim());
+    const lng = Number(lngStr.trim());
+
+    if (isNaN(lat) || isNaN(lng))
+      return res.status(400).json({ message: "Invalid location format" });
+
+    const userPoint = turf.point([lng, lat]);
+
+    // ================= 2. GET ZONES =================
+    const req2 = new sql.Request();
+    const zonesRes = await req2.query(
+      `SELECT ZoneID, GeoJSON FROM Zones WHERE IsActive = 1`
+    );
+
+    let matchedZoneId = null;
+
+    for (const zone of zonesRes.recordset) {
+      try {
+        const polygon = JSON.parse(zone.GeoJSON);
+        let coords = polygon.coordinates[0];
+        const first = coords[0];
+        const last = coords[coords.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) coords.push(first);
+
+        const shape = turf.polygon([coords]);
+        if (turf.booleanPointInPolygon(userPoint, shape)) {
+          matchedZoneId = zone.ZoneID;
+          break;
+        }
+      } catch (err) {
+        console.log("Zone parse error:", err.message);
+      }
+    }
+
+    if (!matchedZoneId)
+      return res.status(404).json({ message: "User not in any service zone" });
+
+    // ================= 3. FIND DRIVER BY ZONE ONLY =================
+    const req3 = new sql.Request();
+    const driverRes = await req3
+      .input("ZoneID", sql.Int, matchedZoneId)
+      .query(`
+        SELECT TOP 1 d.DriverID
+        FROM Drivers d
+        JOIN Schedules s ON d.DriverID = s.DriverID
+        JOIN Slots sl ON s.SlotID = sl.SlotID
+        WHERE s.Active = 1
+          AND sl.ZoneID = @ZoneID
+      `);
+
+    if (driverRes.recordset.length === 0)
+      return res.status(404).json({ message: "No driver found for your zone" });
+
+    const driverId = driverRes.recordset[0].DriverID;
+
+    // ================= 4. DRIVER LOCATION =================
+    const req4 = new sql.Request();
+    const locRes = await req4
+      .input("DriverID", sql.Int, driverId)
+      .query(`
+        SELECT TOP 1 Latitude, Longitude, RecordedAt
+        FROM DriverLocationLogs
+        WHERE DriverID = @DriverID
+        ORDER BY RecordedAt DESC
+      `);
+
+    if (locRes.recordset.length === 0)
+      return res.status(404).json({ message: "Driver location not available" });
+
+    // ================= FINAL RESPONSE =================
+    res.json({
+      DriverID: driverId,
+      ZoneID: matchedZoneId,
+      Latitude: locRes.recordset[0].Latitude,
+      Longitude: locRes.recordset[0].Longitude,
+      RecordedAt: locRes.recordset[0].RecordedAt,
+    });
+
+  } catch (err) {
+    console.log("ERROR:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+//scheduled pickup
+exports.getScheduledPickup = async (req, res) => {
+  try {
+    const UserID = req.user.UserID;
+
+    // ================= 1. USER LOCATION =================
+    const req1 = new sql.Request();
+    const userRes = await req1
+      .input("UserID", sql.Int, UserID)
+      .query(`SELECT latlng FROM Users WHERE UserID = @UserID`);
+
+
+    if (userRes.recordset.length === 0)
+      return res.status(404).json({ message: "User not found" });
+
+    const latlng = userRes.recordset[0].latlng;
+    if (!latlng)
+      return res.status(400).json({ message: "User location not set" });
+
+    const [latStr, lngStr] = latlng.split(",");
+    const lat = Number(latStr.trim());
+    const lng = Number(lngStr.trim());
+
+    if (isNaN(lat) || isNaN(lng))
+      return res.status(400).json({ message: "Invalid location format" });
+
+    const userPoint = turf.point([lng, lat]);
+
+    // ================= 2. GET ZONES =================
+    const req2 = new sql.Request();
+    const zonesRes = await req2.query(
+      `SELECT ZoneID, GeoJSON FROM Zones WHERE IsActive = 1`
+    );
+
+    let matchedZoneId = null;
+    for (const zone of zonesRes.recordset) {
+      try {
+        const polygon = JSON.parse(zone.GeoJSON);
+        let coords = polygon.coordinates[0];
+        const first = coords[0];
+        const last = coords[coords.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) coords.push(first);
+        const shape = turf.polygon([coords]);
+        if (turf.booleanPointInPolygon(userPoint, shape)) {
+          matchedZoneId = zone.ZoneID;
+          break;
+        }
+      } catch (err) {
+        console.log("Zone parse error:", err.message);
+      }
+    }
+
+    if (!matchedZoneId)
+      return res.status(404).json({ message: "User not in any service zone" });
+
+    // ================= 3. GET TODAY'S SLOT FOR USER'S ZONE =================
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayDay = days[new Date().getDay()];
+
+    const req3 = new sql.Request();
+    const slotRes = await req3
+      .input("ZoneID", sql.Int, matchedZoneId)
+      .input("DayOfWeek", sql.VarChar, todayDay)
+      .query(`
+        SELECT TOP 1
+            sc.ScheduleID,
+            sc.DriverID,
+            sc.Active,
+            sl.SlotID,
+            sl.StartTime,
+            sl.EndTime,
+            sl.DayOfWeek,
+            sl.ZoneID
+        FROM Schedules sc
+        INNER JOIN Slots sl ON sc.SlotID = sl.SlotID
+        WHERE sc.Active = 1
+          AND sl.IsActive = 1
+          AND sl.ZoneID = @ZoneID
+          AND sl.DayOfWeek = @DayOfWeek
+        ORDER BY sl.StartTime ASC
+      `);
+
+    if (slotRes.recordset.length === 0)
+      return res.status(404).json({ message: "No pickup scheduled for your zone today" });
+
+    // ================= FINAL RESPONSE =================
+    const slot = slotRes.recordset[0];
+    res.status(200).json({
+      pickup: {
+        ScheduleID: slot.ScheduleID,
+        DriverID:   slot.DriverID,
+        SlotID:     slot.SlotID,
+        StartTime:  slot.StartTime,
+        EndTime:    slot.EndTime,
+        DayOfWeek:  slot.DayOfWeek,
+        ZoneID:     slot.ZoneID,
+      },
+    });
+
+  } catch (err) {
+    console.error("ERROR:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };

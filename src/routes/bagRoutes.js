@@ -6,5 +6,6 @@ const bagController = require('../controllers/bagsController');
 router.post('/add', bagController.generateBags);
 router.get('/viewBag',bagController.viewUserBags)
 router.patch('/disableBag', bagController.disableBag);
+router.post('/extra', bagController.extraBags);
 
 module.exports = router;

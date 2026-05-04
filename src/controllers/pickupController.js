@@ -2,39 +2,52 @@ const sql = require('../config/db');
 
 exports.scanBagAndPickup = async (req, res) => {
     try {
-        const { QRCode, DriverID, CollectorID, VehicleID, Latitude, Longitude } = req.body;
+        const { QRCode, CollectorID, Latitude, Longitude } = req.body;
 
-        const request = new sql.Request();
+        console.log("Incoming:", req.body);
 
-        const bag = await request
+        // 1. Get Bag
+        const bagResult = await new sql.Request()
             .input('QRCode', QRCode)
             .query(`SELECT * FROM Bags WHERE QRCode = @QRCode AND IsActive = 1`);
 
-        if (bag.recordset.length === 0) {
-            return res.status(404).json({ message: 'Invalid or inactive bag' });
+        if (bagResult.recordset.length === 0) {
+            return res.status(404).json({ message: 'Invalid or already collected bag' });
         }
 
-        const BagID = bag.recordset[0].BagID;
-        const CompanyID = bag.recordset[0].CompanyID;
+        const BagID = bagResult.recordset[0].BagID;
 
-        await request
+        // 2. Check duplicate
+        const checkPickup = await new sql.Request()
             .input('BagID', BagID)
-            .input('CompanyID', CompanyID)
-            .input('DriverID', DriverID)
+            .query(`SELECT * FROM Pickups WHERE BagID = @BagID`);
+
+        if (checkPickup.recordset.length > 0) {
+            return res.status(400).json({ message: 'Bag already collected' });
+        }
+
+        // 3. Insert pickup
+        await new sql.Request()
+            .input('BagID', BagID)
             .input('CollectorID', CollectorID)
-            .input('VehicleID', VehicleID)
             .input('Latitude', Latitude)
             .input('Longitude', Longitude)
             .query(`
                 INSERT INTO Pickups
-                (BagID, CompanyID, DriverID, CollectorID, VehicleID, Latitude, Longitude, Status)
+                (BagID, CollectorID, Latitude, Longitude, Status, ScannedAt)
                 VALUES
-                (@BagID, @CompanyID, @DriverID, @CollectorID, @VehicleID, @Latitude, @Longitude, 'Collected')
+                (@BagID, @CollectorID, @Latitude, @Longitude, 'Collected', GETDATE())
             `);
 
-        res.status(200).json({ message: 'Pickup confirmed successfully' });
+        // 4. Deactivate bag
+        await new sql.Request()
+            .input('BagID', BagID)
+            .query(`UPDATE Bags SET IsActive = 0 WHERE BagID = @BagID`);
+
+        res.status(200).json({ message: 'Pickup successful' });
 
     } catch (err) {
+        console.error("ERROR:", err);
         res.status(500).json({ message: 'Server Error', error: err.message });
     }
 };
